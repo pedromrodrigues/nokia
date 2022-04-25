@@ -1,0 +1,96 @@
+module ping_test {
+
+    yang-version "1";
+
+    namespace "urn:srl_test/ping_test";
+
+    prefix "ping_test";
+
+    import srl_nokia-common {
+        prefix srl_nokia-comm;
+    }
+
+    import srl_nokia-network-instance {
+        prefix srl-netinst;
+    }
+
+    revision "2022-03-30" {
+        description "Initial revision";
+        reference "TDB";
+    }
+
+    grouping ping-test-state {
+        container ping-test {
+            presence "Ping agent configuration and state";
+            description "Operational state for Ping agent";
+
+            leaf admin-state {
+                type srl_nokia-comm:admin-state;
+                default "enable";
+            }
+
+            leaf network-instance {
+                type leafref {
+                    path "/srl-netinst:network-instance/srl-netinst:name";
+                }
+                must '(/srl-netinst:network-instance[name = current()]/type = "ip-vrf" or 
+                       /srl-netinst:network-instance[name = current()]/type = "default")' {
+                    error-message "Only network-instances of type ip-vrf or default are allowed.";
+                }
+            }
+
+            list targets {
+                description "State of the targets";
+
+                key "IP-FQDN";
+
+                leaf IP-FQDN {
+                    description "Destination IP/FQDN";
+                    type string;
+                }    
+
+                leaf test-tool {
+                    description "Tool to test the service";
+                    type enumeration {
+                        enum ping;
+                        enum httping;
+                    }
+                }
+
+                leaf number-of-parallel-testing {
+                    description "Number of tests to run in parallel";
+                    type uint64;
+                }
+            }
+        
+            list peer {
+                description "List of service peers";
+                config false;
+
+                key "ip";
+
+                leaf ip {
+                    type srl_nokia-comm:ip-address;
+                    description "Connection IP for this peer";
+                }
+
+                leaf last-update {
+                    type srl_nokia-comm:date-and-time-delta;
+                    description "The date and time of the last update of this entry";
+                }
+
+                leaf tests-performed {
+                    type uint64;
+                    description "Total of tests performed";
+                }
+
+                leaf status-up {
+                    type boolean;
+                    description "Status of the service";
+                }
+            }
+        }
+    }
+
+    uses ping-test-state;
+}
