@@ -29,16 +29,6 @@ module ping_test {
                 default "enable";
             }
 
-            leaf network-instance {
-                type leafref {
-                    path "/srl-netinst:network-instance/srl-netinst:name";
-                }
-                must '(/srl-netinst:network-instance[name = current()]/type = "ip-vrf" or 
-                       /srl-netinst:network-instance[name = current()]/type = "default")' {
-                    error-message "Only network-instances of type ip-vrf or default are allowed.";
-                }
-            }
-
             list targets {
                 description "State of the targets";
 
@@ -47,19 +37,48 @@ module ping_test {
                 leaf IP-FQDN {
                     description "Destination IP/FQDN";
                     type string;
-                }    
+                    mandatory true;
+                }
+
+                leaf admin-state {
+                    type srl_nokia-comm:admin-state;
+                    default "disable";
+                }
+
+                leaf network-instance {
+                    type leafref {
+                        path "/srl-netinst:network-instance/srl-netinst:name";
+                }
+                must '(/srl-netinst:network-instance[name = current()]/type = "ip-vrf" or 
+                       /srl-netinst:network-instance[name = current()]/type = "default")' {
+                    error-message "Only network-instances of type ip-vrf or default are allowed.";
+                    }
+                    mandatory true;
+                }
 
                 leaf test-tool {
                     description "Tool to test the service";
                     type enumeration {
-                        enum ping;
-                        enum httping;
+                        enum ping {
+                            value 0;
+                        }
+                        enum httping {
+                            value 1;
+                        }
                     }
+                    mandatory true;
                 }
 
-                leaf number-of-parallel-testing {
+                leaf number-of-parallel-tests {
                     description "Number of tests to run in parallel";
                     type uint64;
+                    mandatory true;
+                }
+
+                leaf source-ip {
+                    description "Source IP address";
+                    type string;
+                    mandatory true;
                 }
             }
         
