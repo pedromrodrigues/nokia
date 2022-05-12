@@ -43,6 +43,16 @@ stub = sdk_service_pb2_grpc.SdkMgrServiceStub(channel)
 lock = threading.Lock()
 count = {}
 
+from enum import Enum
+class Threads_Check(Enum):
+    LOWER = 1
+    GREATER = 2
+    EVEN = 3
+
+class Existence(Enum):
+    NEW = 1
+    ALREADY_EXISTED = 2
+
 ###############################
 ## Subscribe to required event
 ###############################
@@ -89,13 +99,15 @@ def Remove_Telemetry(js_paths):
     telemetry_response = telemetry_stub.TelemetryDelete(request=telemetry_del_request, metadata=metadata)
     return telemetry_response
 
+
 from threading import Thread
 class ServiceMonitoringThread(Thread):
-    def __init__(self,network_instance,destination,test_tool):
+    def __init__(self,network_instance,destination,test_tool,source_ip):
         Thread.__init__(self)
         self.network_instance = network_instance
         self.destination = destination
         self.test_tool = test_tool
+        self.source_ip = source_ip
         self.stop = False
         self.in_count = False
         self.state_per_service = {}
@@ -121,7 +133,10 @@ class ServiceMonitoringThread(Thread):
         while not self.stop:
             
             if self.test_tool == 'ping':
+
+                #cmd = f"ip netns exec {netinst} ping -c 1 {self.destination}"
                 output = os.system(f"ip netns exec {netinst} ping -c 1 {self.destination}")
+                #output = subprocess.run(cmd, shell=True)
 
                 lock.acquire()
                 count[ peer ].update( { 'count': count[ peer ]['count']+1 } )
@@ -146,130 +161,221 @@ class ServiceMonitoringThread(Thread):
                 Add_Telemetry( [(f'.ping_test.peer{{.ip=="{peer}"}}', data )] )
                 lock.release()
 
-                time.sleep(1)
+                time.sleep(10)
+            
+            if self.test_tool == "httping":
+
+                logging.info("HTTTTTTTP 2.0")
+                time.sleep(20)
 
         return
 
+##########################################################################
+## Function that stops the parallel tests (threads)
+## It can be performed for all IP FQDN if admin_state=disable
+## Or just for a single IP FQDN depending on the flag option 
+##########################################################################
+def Stop_Target_Threads(state,option,ip_fqdn=None):
+    if option == "all":
+        for ip_fqdn in state.targets:
+            if state.targets[ ip_fqdn ]['admin_state'] == "enable":
+                for thread in state.targets[ ip_fqdn ]['threads']:
+                    thread.stop = True
+                    logging.info(f'Joining thread')
+                    thread.join()
+                state.targets[ ip_fqdn ]['threads'].clear()
+        return
 
-        #output_2 = subprocess.run(f"ip netns exec {netinst} ping -c 1 {self.destination}", stdout=f)        
-        #transform_2 = str(output_2.returncode)
-        #logging.info(f'Este é o output {transform_2}')
+    elif option == "single":
+        try:   
+            for thread in state.targets[ ip_fqdn ]['threads']:
+                thread.stop = True
+                logging.info(f"Joining thread for {ip_fqdn}")
+                thread.join()
+            state.targets[ ip_fqdn ]['threads'].clear()
+        except TypeError:
+            logging.info(f"Error on Joining Thread :: Stop_Target_Threads()")
+        else:
+            return
 
-        #result = str(output.returncode)
-        #logging.info(f'>>>>>>>> A cena foi {result}')
+##########################################################################
+## Function that starts the parallel tests (threads)
+## It can be performed for all admin_state=enable IP FQDN
+## Or just for a single IP FQDN depending on the flag option 
+##########################################################################
+def Start_Target_Threads(state,option,ip_fqdn=None):
+    if option == "all":
+        for ip_fqdn in state.targets:                
+            if state.targets[ ip_fqdn ]['admin_state'] == "enable":
+                for i in range(int(state.targets[ ip_fqdn ]['number_of_parallel_tests'])):
+                    new_thread = ServiceMonitoringThread(
+                        state.targets[ ip_fqdn ]['network_instance'],
+                        ip_fqdn,
+                        state.targets[ ip_fqdn ]['test_tool'],
+                        state.targets[ ip_fqdn ]['source_ip']
+                    )
+                    state.targets[ ip_fqdn ]['threads'].append(new_thread)
+                    logging.info(f" *** Starting a new Thread *** {ip_fqdn}")
+                    new_thread.start()
+        return
+    
+    if option == "single":
+        try:
+            for i in range(int(state.targets[ ip_fqdn ]['number_of_parallel_tests'])):
+                new_thread = ServiceMonitoringThread(
+                    state.targets[ ip_fqdn ]['network_instance'],
+                    ip_fqdn,
+                    state.targets[ ip_fqdn ]['test_tool'],
+                    state.targets[ ip_fqdn ]['source_ip']
+                )
+                state.targets[ ip_fqdn ]['threads'].append(new_thread)
+                logging.info(f" *** Starting a new Thread *** {ip_fqdn}")
+                new_thread.start()
+        except TypeError:
+            logging.info("Error creating Thread :: Start_Target_Threads()")
+        else:
+            return
 
+##########################################################################
+## Function that checks if the number of parallel tests were changed 
+##########################################################################
+def Check_Number_Tests(state,ip_fqdn):
+    if int(state.targets[ ip_fqdn ]['number_of_parallel_tests']) > len(state.targets[ ip_fqdn ]['threads']):
+        return Threads_Check.GREATER.name
+    elif int(state.targets[ ip_fqdn ]['number_of_parallel_tests']) < len(state.targets[ ip_fqdn ]['threads']):
+        return Threads_Check.LOWER.name
+    else:
+        return Threads_Check.EVEN.name
 
+#############################################################################
+## Function that checks if changes on source_ip or test_tool were performed 
+#############################################################################
+def Source_IP_or_Tool_Change(state,ip_fqdn):
+    if state.targets[ ip_fqdn ]['source_ip'] != state.targets[ ip_fqdn ]['threads'][0].source_ip or \
+    state.targets[ ip_fqdn ]['test_tool'] != state.targets[ ip_fqdn ]['threads'][0].test_tool:
+        return True
+    else:
+        return False
+
+##########################################################################
+## Function that creates or updates the target IP FQDN information 
+##########################################################################
+def Update_Target(state,data,ip_fqdn):
+
+    admin_state = data['admin_state'][12:]
+    network_instance = data['network_instance']['value']
+    test_tool = data['test_tool'][10:]
+    parallel_tests = data['number_of_parallel_tests']['value']
+    source_ip = data['source_ip']['value']
+
+    if ip_fqdn not in state.targets:
+        state.targets[ ip_fqdn ] = { 
+            'admin_state': admin_state,
+            'network_instance': network_instance,
+            'test_tool': test_tool,
+            'number_of_parallel_tests': parallel_tests,
+            'source_ip': source_ip,
+            'threads': []
+            }
+        return Existence.NEW.name
+
+    else:
+        state.targets[ ip_fqdn ].update( { 
+            'admin_state': admin_state,
+            'network_instance': network_instance,
+            'test_tool': test_tool,
+            'number_of_parallel_tests': parallel_tests,
+            'source_ip':source_ip
+            } )
+        return Existence.ALREADY_EXISTED.name
 
 ##########################################################################
 ## Proc to process the config notifications received by auto_config_agent
 ## At present processing config from js_path containing agent_name
 ##########################################################################
 def Handle_Notification(obj, state):
+
     if obj.HasField('config'):
         logging.info(f"GOT CONFIG :: {obj.config.key.js_path}")
-
-        if obj.config.key.keys:
-            ip_fqdn = obj.config.key.keys[0]
 
         json_str = obj.config.data.json.replace("'", "\"")
         data = json.loads(json_str) if json_str != "" else {}
 
-        # Delete one target ip_fqdn
+        if obj.config.key.keys:
+            ip_fqdn = obj.config.key.keys[0]
+
         if obj.config.op == 2 and obj.config.key.keys:
-            logging.info(f"Deleting {ip_fqdn}")
             if state.targets[ ip_fqdn ]['threads']:
-                thread.stop = True
-                logging.info(f"Joining thread for {ip_fqdn}")
-                thread.join()
+                Stop_Target_Threads(state,"single",ip_fqdn)
             del state.targets[ ip_fqdn ]
+            lock.acquire()
+            del count[ ip_fqdn ]
+            lock.release()
             Remove_Telemetry( [(f'.ping_test.peer{{.ip=="{ip_fqdn}"}}')] )
 
-        else:
-            if 'admin_state' in data:
-                state.admin_state = data['admin_state'][12:]
-            if 'network_instance' in data:
-                state.network_instance = data['network_instance']['value']
-            if 'targets' in data:
-                test_tool = data['targets']['test_tool'][10:]
-                parallel_tests = data['targets']['number_of_parallel_testing']['value']
+        elif 'admin_state' in data:
+            state.admin_state = data['admin_state'][12:]
 
-                if ip_fqdn not in state.targets:
-                    state.targets[ ip_fqdn ] = { 'test_tool': test_tool, 'number_of_parallel_testing': parallel_tests, 'threads': [] }
-                else:
-                    state.targets[ ip_fqdn ].update( { 'test_tool': test_tool, 'number_of_parallel_testing': parallel_tests } )   
-            #else:
-            #    logging.info(f"Unexpected notification : {obj}")
-
-        if state.admin_state == "enable" and obj.config.op != 2:
-            # if a new target was added
-            # the monitoring will start for this ip_fqdn
-            if obj.config.key.keys:
-                for i in range(int(state.targets[ ip_fqdn ]['number_of_parallel_testing'])):
-                    new_thread = ServiceMonitoringThread(state.network_instance,ip_fqdn,state.targets[ ip_fqdn ]['test_tool'])
-                    state.targets[ ip_fqdn ]['threads'].append(new_thread)
-                    logging.info(f" *** Starting a new Thread *** {ip_fqdn}")
-                    new_thread.start()
+            if state.admin_state == "enable":
+                Start_Target_Threads(state,"all")
             else:
-                for target in state.targets:
-                    # if the threads list is empty
-                    if not state.targets[ target ]['threads']:
-                        for i in range(int(state.targets[ target ]['number_of_parallel_testing'])):
-                            new_thread = ServiceMonitoringThread(state.network_instance,target,state.targets[ target ]['test_tool'])
-                            state.targets[ target ]['threads'].append(new_thread)
-                            logging.info(f" *** Starting a new Thread *** {target}")
-                            new_thread.start()
+                Stop_Target_Threads(state,"all")
+  
+        elif 'targets' in data:
 
-                    # if there are already running threads and test_tool hasn't changed
-                    elif len(state.targets[ target ]['threads']) != int(state.targets[ target ]['number_of_parallel_testing']) \
-                    and state.targets[ target ]['threads'][0].test_tool == state.targets[ target ]['test_tool']:
-                
-                        # there is an increase of running threads
-                        if len(state.targets[ target ]['threads']) < int(state.targets[ target ]['number_of_parallel_testing']):
+            result = Update_Target(state, data['targets'], ip_fqdn)
 
-                            for j in range(len(state.targets[ target ]['threads']),int(state.targets[ target ]['number_of_parallel_testing'])):
-                                new_thread = ServiceMonitoringThread(state.network_instance,target,state.targets[ target ]['test_tool'])
-                                state.targets[ target ]['threads'].append(new_thread)
-                                new_thread.start()
-                        # there is a decrease of running threads
-                        else:
-                            for j in range(int(state.targets[ target ]['number_of_parallel_testing']),len(state.targets[ target ]['threads'])):
-                                thread = state.targets[ target ]['threads'][int(state.targets[ target ]['number_of_parallel_testing'])]
-                                thread.stop = True
-                                thread.join()
-                                state.targets[ target ]['threads'].pop([int(state.targets[ target ]['number_of_parallel_testing'])])
-                    # if the number of threads is the same but the test_tool is different
+            if state.targets[ ip_fqdn ]['admin_state'] == "enable" and state.admin_state == "enable":
+                if result == "NEW":
+                    Start_Target_Threads(state,"single",ip_fqdn)
+
+                if result == "ALREADY_EXISTED":
+                    if not state.targets[ ip_fqdn ]['threads']:
+                        Start_Target_Threads(state,"single",ip_fqdn)
+
                     else:
-                        for thread in state.targets[ target ]['threads']:
-                            thread.stop = True
-                            thread.join()
-                        
-                        lock.acquire()
-                        count[ target ].update( { 'count': 0 } )
-                        lock.release()
+                        if Source_IP_or_Tool_Change(state,ip_fqdn):
+                            Stop_Target_Threads(state,"single",ip_fqdn)
+                            lock.acquire()
+                            count[ ip_fqdn ].update( { 'count': 0 } )
+                            lock.release()
+                            Start_Target_Threads(state,"single",ip_fqdn)
+                        else:
+                            testsChange = Check_Number_Tests(state,ip_fqdn)
+                            if testsChange == "LOWER":
+                                while int(state.targets[ ip_fqdn ]['number_of_parallel_tests']) != len(state.targets[ ip_fqdn ]['threads']):
+                                    thread = state.targets[ ip_fqdn ]['threads'][len(state.targets[ ip_fqdn ]['threads'])-1]
+                                    thread.stop = True
+                                    logging.info(f"Joining thread for {ip_fqdn}")
+                                    thread.join()
+                                    state.targets[ ip_fqdn ]['threads'].remove(thread)
+                                
+                            elif testsChange == "GREATER":
+                                for j in range(len(state.targets[ ip_fqdn ]['threads']),int(state.targets[ ip_fqdn ]['number_of_parallel_tests'])):
+                                    new_thread = ServiceMonitoringThread(
+                                        state.targets[ ip_fqdn ]['network_instance'],
+                                        ip_fqdn,
+                                        state.targets[ ip_fqdn ]['test_tool'],
+                                        state.targets[ ip_fqdn ]['source_ip']
+                                    )
+                                    state.targets[ ip_fqdn ]['threads'].append(new_thread)
+                                    logging.info(f" *** Starting a new Thread *** {ip_fqdn}")
+                                    new_thread.start()
 
-                        for j in range(int(state.targets[ target ]['number_of_parallel_testing'])):
-                            new_thread = ServiceMonitoringThread(state.network_instance,target,state.targets[ target ]['test_tool'])
-                            state.targets[ target ]['threads'].append(new_thread)
-                            new_thread.start()
+            if state.targets[ ip_fqdn ]['admin_state'] == "disable" and state.admin_state == "enable":
+                Stop_Target_Threads(state,"single",ip_fqdn)
+ 
+    else:
+        logging.info(f"Unexpected notification : {obj}")
 
-        elif state.admin_state == "disable":
-            if state.targets:
-                for target in state.targets:
-                    for thread in state.targets[ target ]['threads']:
-                        thread.stop = True
-                        logging.info(f'Joining thread')
-                        thread.join()
-                    state.targets[ target ]['threads'].clear()
-            
-        return False
+    return False
 
 #######################################################################
 ## State
-## Contains the network instance, admin_state and the dict of ip/fqdn
+## Contains the admin_state and the dict of each target ip/fqdn
 #######################################################################
 class State(object):
     def __init__(self):
-        self.network_instance = ''
         self.admin_state = ''
         self.targets = {}
     
@@ -310,7 +416,7 @@ def Run():
             for obj in r.notification:
 
                 if obj.HasField('config') and obj.config.key.js_path == '.commit.end':
-                    logging.info('TO DO -commit.end config')
+                    logging.info("TO DO -.commit.end")
                 else:
                     Handle_Notification(obj, state)
                     logging.info(f'Updated state: {state}')
