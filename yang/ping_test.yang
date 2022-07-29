@@ -1,6 +1,6 @@
 module ping_test {
 
-    yang-version "1";
+    yang-version 1.1;
 
     namespace "urn:srl_test/ping_test";
 
@@ -69,8 +69,8 @@ module ping_test {
                     mandatory true;
                 }
 
-                leaf number-of-parallel-tests {
-                    description "Number of tests to run in parallel";
+                leaf number-of-tests {
+                    description "Number of tests to run";
                     type uint64;
                     mandatory true;
                 }
@@ -80,6 +80,23 @@ module ping_test {
                     type string;
                     mandatory true;
                 }
+
+                leaf number-of-packets {
+                    description "Number of packets to be sent on each test";
+                    type uint8 {
+                        range "1..255";
+                    }
+                    default 1;
+                }
+
+                leaf interval-period {
+                    description "Interval period of time in seconds between each test";
+                    type uint16 {
+                        range "1..65535";
+                    }
+                    default 1;
+                }
+
             }
         
             list peer {
@@ -89,7 +106,7 @@ module ping_test {
                 key "ip";
 
                 leaf ip {
-                    type srl_nokia-comm:ip-address;
+                    type string;
                     description "Connection IP for this peer";
                 }
 
@@ -101,11 +118,52 @@ module ping_test {
                 leaf tests-performed {
                     type uint64;
                     description "Total of tests performed";
+                    default 0;
+                }
+
+                leaf successful-tests {
+                    type uint64;
+                    description "Total of successful tests";
+                    default 0;
+                }
+
+                leaf unsuccessful-tests {
+                    type uint64;
+                    description "Total of unsuccessful tests";
+                    default 0;
                 }
 
                 leaf status-up {
                     type boolean;
                     description "Status of the service";
+                }
+
+                leaf rtt-min-ms {
+                    type decimal64 {
+                        fraction-digits 3;
+                    }
+                    description "Round trip minimum time in ms";
+                }
+
+                leaf rtt-max-ms {
+                    type decimal64 {
+                        fraction-digits 3;
+                    }
+                    description "Round trip maximum time in ms"; 
+                }
+
+                leaf rtt-avg-ms {
+                    type decimal64 {
+                        fraction-digits 3;
+                    }
+                    description "Round trip average time in ms";
+                }
+
+                leaf rtt-stddev {
+                    type decimal64 {
+                        fraction-digits 3;
+                    }
+                    description "Round trip standard deviation in ms";
                 }
             }
         }
