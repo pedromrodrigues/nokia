@@ -1,0 +1,12 @@
+2022-06-29 10:49:59,908 INFO Source-IP: 2.2.2.2 | Available: True | Round-trip min/avg/max/stddev = 8.469/512.277/1016.085/503.808 ms
+2022-06-29 10:50:02,148 INFO Source-IP: 2.2.2.2 | Available: True | Round-trip min/avg/max/stddev = 3.959/5.067/6.175/1.108 ms
+2022-06-30 12:01:50,898 INFO Source-IP: 2.2.2.2 | Available: True | Round-trip min/avg/max/stddev = 1028.280/1028.280/1028.280/0.000 ms
+2022-06-30 12:01:52,159 INFO Source-IP: 2.2.2.2 | Available: True | Round-trip min/avg/max/stddev = 9.605/9.605/9.605/0.000 ms
+2022-06-30 12:02:46,291 INFO Source-IP: 2.2.2.2 | Available: True | Round-trip min/avg/max/stddev = 2.287/5.053/9.596/2.496 ms
+2022-06-30 12:02:51,523 INFO Source-IP: 2.2.2.2 | Available: True | Round-trip min/avg/max/stddev = 2.911/5.746/9.295/2.703 ms
+2022-07-04 15:11:45,348 INFO Source-IP: 2.2.2.2 | Available: True | Round-trip min/avg/max/stddev = 2.592/212.076/1032.984/410.460 ms
+2022-07-04 15:11:50,609 INFO Source-IP: 2.2.2.2 | Available: True | Round-trip min/avg/max/stddev = 1.368/5.428/7.762/2.394 ms
+2022-07-04 15:14:46,371 INFO Source-IP: 2.2.2.2 | Available: True | Round-trip min/avg/max/stddev = 3.424/4.468/5.725/0.822 ms
+2022-07-04 15:14:51,595 INFO Source-IP: 2.2.2.2 | Available: True | Round-trip min/avg/max/stddev = 3.286/7.482/12.042/2.910 ms
+2022-07-04 15:15:30,441 INFO Source-IP: 2.2.2.2 | Available: True | Round-trip min/avg/max/stddev = 3.135/5.417/8.215/1.774 ms
+2022-07-04 15:15:35,663 INFO Source-IP: 2.2.2.2 | Available: True | Round-trip min/avg/max/stddev = 1.320/4.590/7.769/2.481 ms
