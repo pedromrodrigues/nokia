@@ -34,6 +34,10 @@ module ping_test {
 
                 key "IP-FQDN";
 
+                must '(test-tool != "httping") or boolean(port)' {
+                    error-message "Port option is only available for httping test-tool.";
+                }
+
                 leaf IP-FQDN {
                     description "Destination IP/FQDN";
                     type string;
@@ -79,6 +83,16 @@ module ping_test {
                     description "Source IP address";
                     type string;
                     mandatory true;
+                }
+
+                leaf port {
+                    description "Port";
+                    type uint16{
+                        range "1..65535";
+                    }
+                    must '../test-tool = "httping"' {
+                        error-message "Option only available for httping.";
+                    }
                 }
 
                 leaf number-of-packets {
