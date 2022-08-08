@@ -167,13 +167,14 @@ def send_keep_alive():
 from threading import Thread
 from threading import Event
 class ServiceMonitoringThread(Thread):
-    def __init__(self,network_instance,destination,number_of_tests,test_tool,source_ip,number_of_packets,interval_period):
+    def __init__(self,network_instance,destination,number_of_tests,test_tool,source_ip,number_of_packets,interval_period,port=None):
         Thread.__init__(self)
         self.network_instance = network_instance
         self.destination = destination
         self.number_of_tests = int(number_of_tests)
         self.test_tool = test_tool
         self.source_ip = source_ip
+        self.port = port
         self.number_of_packets = number_of_packets
         self.interval_period = int(interval_period)
         self.stop = False
@@ -191,7 +192,7 @@ class ServiceMonitoringThread(Thread):
             cmd = f"ip netns exec {netinst} ping -c {self.number_of_packets} -I {self.source_ip} {self.destination}"
             find_statement = r'rtt min/avg/max/mdev = ([\d./]+)'
         elif self.test_tool == 'httping':
-            cmd = f"ip netns exec {netinst} httping -c {self.number_of_packets} -y {self.source_ip} -v {self.destination}"
+            cmd = f"ip netns exec {netinst} httping -c {self.number_of_packets} -y {self.source_ip} -v {self.destination}:{self.port}"
             find_statement = r'round-trip min/avg/max/sd = ([\d./]+)'
 
         counting = 0
@@ -291,7 +292,8 @@ def Start_Target_Threads(state,option,ip_fqdn=None):
                     state.targets[ ip_fqdn ]['test_tool'],
                     state.targets[ ip_fqdn ]['source_ip'],
                     state.targets[ ip_fqdn ]['number_of_packets'],
-                    state.targets[ ip_fqdn ]['interval_period']
+                    state.targets[ ip_fqdn ]['interval_period'],
+                    state.targets[ ip_fqdn ]['port']
                 )
                 threads.append(new_thread)
                 state.targets[ ip_fqdn ]['thread'] = new_thread
@@ -308,7 +310,8 @@ def Start_Target_Threads(state,option,ip_fqdn=None):
                 state.targets[ ip_fqdn ]['test_tool'],
                 state.targets[ ip_fqdn ]['source_ip'],
                 state.targets[ ip_fqdn ]['number_of_packets'],
-                state.targets[ ip_fqdn ]['interval_period']
+                state.targets[ ip_fqdn ]['interval_period'],
+                state.targets[ ip_fqdn ]['port']
             )
             threads.append(new_thread)
             state.targets[ ip_fqdn ]['thread'] = new_thread
@@ -332,6 +335,11 @@ def Update_Target(state,data,ip_fqdn):
     number_of_packets = data['number_of_packets']['value']
     interval_period = data['interval_period']['value']
 
+    if test_tool == "httping":
+        port = data['port']['value']
+    else:
+        port = None
+
     if ip_fqdn not in state.targets:
         state.targets[ ip_fqdn ] = { 
             'admin_state': admin_state,
@@ -341,8 +349,9 @@ def Update_Target(state,data,ip_fqdn):
             'source_ip': source_ip,
             'number_of_packets': number_of_packets,
             'interval_period': interval_period,
+            'port': port,
             }
-        return Existence.NEW.name
+        return Existence.NEW
 
     else:
         state.targets[ ip_fqdn ].update( { 
@@ -353,8 +362,9 @@ def Update_Target(state,data,ip_fqdn):
             'source_ip':source_ip,
             'number_of_packets': number_of_packets,
             'interval_period': interval_period,
+            'port': port,
             } )
-        return Existence.ALREADY_EXISTED.name
+        return Existence.ALREADY_EXISTED
 
 ##########################################################################
 ## Proc to process the config notifications received by auto_config_agent
@@ -389,10 +399,10 @@ def Handle_Notification(obj, state):
             result = Update_Target(state, data['targets'], ip_fqdn)
 
             if state.targets[ ip_fqdn ]['admin_state'] == "enable" and state.admin_state == "enable":
-                if result == "NEW":
+                if result == Existence.NEW:
                     Start_Target_Threads(state,"single",ip_fqdn)
 
-                if result == "ALREADY_EXISTED":
+                if result == Existence.ALREADY_EXISTED:
                     if 'thread' in state.targets[ ip_fqdn ]:
                         Stop_Target_Threads(state,"single",ip_fqdn)
                     else:
